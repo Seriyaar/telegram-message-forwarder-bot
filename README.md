@@ -8,6 +8,84 @@ To configure this bot you have to use the file template at [`sample.config.toml`
 If you want to pass the values as environment variables, then pass the content of the config.toml file as environment variable `CONFIG`.
 
 #### Pyrogram Section
+ 
+_all_media'] else 'Send All Media: Off',
+            reply_markup=call.message.reply_markup
+        )
+    elif call.data == 'send_all_text':
+        settings['transform_options']['send_all_text'] = not settings['transform_options']['send_all_text']
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text='Send All Text: On' if settings['transform_options']['send_all_text'] else 'Send All Text: Off',
+            reply_markup=call.message.reply_markup
+        )
+
+@bot.message_handler(commands=['should_forward'])
+def toggle_forwarding(message):
+    global settings
+    settings['should_forward'] = not settings['should_forward']
+    bot.send_message(message.chat.id, "Forwarding is now " + ("on" if settings['should_forward'] else "off"))
+
+def transform_message(message, settings):
+    if not settings['should_forward']:
+        return None
+
+    text = message.text.strip()
+    
+    if settings['transform_options']['replace_username']:
+        text = text.replace('@' + message.from_user.username, MY_USERNAME)
+    
+    if settings['transform_options']['replace_links']:
+        text = text.replace(MY_URL, MY_URL)
+    
+    if settings['transform_options']['disable_preview']:
+        text = text.replace(MY_URL, MY_URL)
+        text = text.replace(MY_URL, MY_URL)
+    
+    if settings['end_text']:
+        text += f"\n{settings['end_text']}"
+    
+    return text
+
+def forward_message(message, settings):
+    if not settings['should_forward']:
+        return None
+
+    text = transform_message(message, settings)
+
+    if text is not None:
+        for outgoing_chat in settings['outgoing_chats']:
+            try:
+                bot.send_message(outgoing_chat, text, disable_web_page_preview=settings['transform_options']['disable_preview'])
+            except Exception as e:
+                print(f"Error forwarding to {outgoing_chat}: {e}")
+
+def check_and_forward_messages(settings):
+    for incoming_chat in settings['incoming_chats']:
+        try:
+            updates = bot.get_updates(offset=-1, timeout=1, allowed_updates=["message"])
+            for update in updates:
+                message = update.message
+                if message.chat.id == incoming_chat:
+                    forward_message(message, settings)
+        except Exception as e:
+            print(f"Error getting updates from {incoming_chat}: {e}")
+
+def main():
+    while True:
+        current_hour, current_minute = map(int, time.strftime("%H:%M").split(':'))
+        scheduled_hour, scheduled_minute = map(int, settings['schedule'].split(':'))
+
+        if current_hour == scheduled_hour and current_minute == scheduled_minute:
+            check_and_forward_messages(settings)
+
+        time.sleep(60)  # Check every minute
+
+if __name__ == "__main__":
+    main()
+
+bot.polling(none_stop=True)
 - `api_id` - Your Telegram API ID.
 - `api_hash` - Your Telegram API Hash.
 - `session_string` - (Optional if `bot_token` is provided) Session string of your Telegram account. You can get it by running [`get_session.py`](./get_session.py) file.
